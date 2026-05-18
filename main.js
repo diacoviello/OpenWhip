@@ -5,13 +5,18 @@ const os = require('os');
 const { execFile } = require('child_process');
 
 // ── Win32 FFI (Windows only) ────────────────────────────────────────────────
-let keybd_event, VkKeyScanA;
+let keybd_event, VkKeyScanA, GetForegroundWindow, SwitchToThisWindow, GetClassNameA, GetWindowRect;
 if (process.platform === 'win32') {
   try {
-    const koffi = require('koffi');
+    const koffi  = require('koffi');
     const user32 = koffi.load('user32.dll');
-    keybd_event = user32.func('void __stdcall keybd_event(uint8_t bVk, uint8_t bScan, uint32_t dwFlags, uintptr_t dwExtraInfo)');
-    VkKeyScanA = user32.func('int16_t __stdcall VkKeyScanA(int ch)');
+    keybd_event        = user32.func('void      __stdcall keybd_event(uint8_t bVk, uint8_t bScan, uint32_t dwFlags, uintptr_t dwExtraInfo)');
+    VkKeyScanA         = user32.func('int16_t   __stdcall VkKeyScanA(int ch)');
+    GetForegroundWindow = user32.func('uintptr_t __stdcall GetForegroundWindow()');
+    SwitchToThisWindow  = user32.func('void      __stdcall SwitchToThisWindow(uintptr_t hWnd, int32_t fUnknown)');
+    GetClassNameA       = user32.func('int       __stdcall GetClassNameA(uintptr_t hWnd, uint8_t* lpClassName, int nMaxCount)');
+    const RECT = koffi.struct('RECT', { left: 'int32', top: 'int32', right: 'int32', bottom: 'int32' });
+    GetWindowRect       = user32.func('bool      __stdcall GetWindowRect(uintptr_t hWnd, _Out_ RECT* lpRect)');
   } catch (e) {
     console.warn('koffi not available – macro sending disabled', e.message);
   }
@@ -22,8 +27,34 @@ let tray, overlay;
 let overlayReady = false;
 let spawnQueued = false;
 
+// Last known real app window — updated by a 500 ms poll so it's always set
+// to a non-taskbar window before the tray click fires.
+let targetHwnd = null;
+
+// Window classes that belong to the shell/taskbar and should never be targeted.
+const WIN_SKIP_CLASSES = new Set([
+  'Shell_TrayWnd',
+  'NotifyIconOverflowWindow',
+  'TaskListThumbnailWnd',
+  'WorkerW',
+  'Progman',
+]);
+
+function pollForegroundWindow() {
+  if (!GetForegroundWindow || !GetClassNameA) return;
+  try {
+    const hwnd = GetForegroundWindow();
+    if (!hwnd) return;
+    const buf = Buffer.alloc(256);
+    GetClassNameA(hwnd, buf, 256);
+    const cls = buf.toString('ascii').split('\0')[0];
+    if (!WIN_SKIP_CLASSES.has(cls)) targetHwnd = hwnd;
+  } catch {}
+}
+
 // ── Crack count persistence ──────────────────────────────────────────────────
 let crackCount = 0;
+let sessionCrackCount = 0;
 let statsPath;
 
 function loadCrackCount() {
@@ -53,45 +84,33 @@ function rebuildTrayMenu() {
   );
 }
 
-const VK_CONTROL = 0x11;
+const VK_MENU    = 0x12;
 const VK_RETURN  = 0x0D;
 const VK_C       = 0x43;
-const VK_MENU    = 0x12; // Alt
-const VK_TAB     = 0x09;
 const KEYUP      = 0x0002;
 
-/** One Alt+Tab / Cmd+Tab so focus returns to the previously active app after tray click. */
 function refocusPreviousApp() {
-  const delayMs = 80;
-  const run = () => {
-    if (process.platform === 'win32') {
-      if (!keybd_event) return;
-      keybd_event(VK_MENU, 0, 0, 0);
-      keybd_event(VK_TAB, 0, 0, 0);
-      keybd_event(VK_TAB, 0, KEYUP, 0);
-      keybd_event(VK_MENU, 0, KEYUP, 0);
-    } else if (process.platform === 'darwin') {
-      const script = [
-        'tell application "System Events"',
-        '  key down command',
-        '  key code 48', // Tab
-        '  key up command',
-        'end tell',
-      ].join('\n');
+  if (process.platform === 'darwin') {
+    const script = [
+      'tell application "System Events"',
+      '  key down command',
+      '  key code 48',
+      '  key up command',
+      'end tell',
+    ].join('\n');
+    setTimeout(() => {
       execFile('osascript', ['-e', script], err => {
-        if (err) {
-          console.warn('refocus previous app (Cmd+Tab) failed:', err.message);
-        }
+        if (err) console.warn('refocus (Cmd+Tab) failed:', err.message);
       });
-    } else if (process.platform === 'linux') {
+    }, 80);
+  } else if (process.platform === 'linux') {
+    setTimeout(() => {
       execFile('xdotool', ['key', '--clearmodifiers', 'alt+Tab'], err => {
-        if (err) {
-          console.warn('refocus previous app (Alt+Tab) failed. Install xdotool:', err.message);
-        }
+        if (err) console.warn('refocus (Alt+Tab) failed. Install xdotool:', err.message);
       });
-    }
-  };
-  setTimeout(run, delayMs);
+    }, 80);
+  }
+  // Windows: focus is restored at crack time via SwitchToThisWindow.
 }
 
 function createTrayIconFallback() {
@@ -151,12 +170,32 @@ async function getTrayIcon() {
   return createTrayIconFallback();
 }
 
+// Returns the Electron Display that contains the centre of targetHwnd,
+// falling back to the primary display if the HWND is unavailable.
+function getTargetDisplay() {
+  if (GetWindowRect && targetHwnd) {
+    try {
+      const rect = {};
+      GetWindowRect(targetHwnd, rect);
+      const cx = Math.round((rect.left + rect.right) / 2);
+      const cy = Math.round((rect.top + rect.bottom) / 2);
+      return screen.getDisplayNearestPoint({ x: cx, y: cy });
+    } catch {}
+  }
+  return screen.getPrimaryDisplay();
+}
+
+function spawnWhipInOverlay() {
+  sessionCrackCount = 0;
+  overlay.webContents.send('spawn-whip');
+  overlay.webContents.send('count-update', { session: 0, total: crackCount });
+}
+
 // ── Overlay window ──────────────────────────────────────────────────────────
-function createOverlay() {
-  const { bounds } = screen.getPrimaryDisplay();
+function createOverlay(display) {
+  const { x, y, width, height } = display.bounds;
   overlay = new BrowserWindow({
-    x: bounds.x, y: bounds.y,
-    width: bounds.width, height: bounds.height,
+    x, y, width, height,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -175,7 +214,7 @@ function createOverlay() {
     overlayReady = true;
     if (spawnQueued && overlay && overlay.isVisible()) {
       spawnQueued = false;
-      overlay.webContents.send('spawn-whip');
+      spawnWhipInOverlay();
       refocusPreviousApp();
     }
   });
@@ -187,14 +226,14 @@ function createOverlay() {
 }
 
 function toggleOverlay() {
-  if (overlay && overlay.isVisible()) {
+  if (overlay && !overlay.isDestroyed() && overlay.isVisible()) {
     overlay.webContents.send('drop-whip');
     return;
   }
-  if (!overlay) createOverlay();
+  if (!overlay || overlay.isDestroyed()) createOverlay(getTargetDisplay());
   overlay.show();
   if (overlayReady) {
-    overlay.webContents.send('spawn-whip');
+    spawnWhipInOverlay();
     refocusPreviousApp();
   } else {
     spawnQueued = true;
@@ -204,19 +243,42 @@ function toggleOverlay() {
 // ── IPC ─────────────────────────────────────────────────────────────────────
 ipcMain.on('whip-crack', () => {
   crackCount++;
+  sessionCrackCount++;
   saveCrackCount();
   rebuildTrayMenu();
-  try {
-    sendMacro();
-  } catch (err) {
-    console.warn('sendMacro failed:', err?.message || err);
+  if (overlay) overlay.webContents.send('count-update', { session: sessionCrackCount, total: crackCount });
+
+  if (process.platform === 'win32') {
+    // Log what window currently has focus so we can diagnose targeting issues.
+    if (GetForegroundWindow && GetClassNameA) {
+      try {
+        const hwnd = GetForegroundWindow();
+        const buf  = Buffer.alloc(256);
+        GetClassNameA(hwnd, buf, 256);
+        console.log('[whip-crack] foreground class:', buf.toString('ascii').split('\0')[0], '| targetHwnd:', targetHwnd, '| fgHwnd:', hwnd);
+      } catch {}
+    }
+    // Switch to the window that was active when the tray was clicked, then
+    // wait one frame before injecting keystrokes.
+    if (SwitchToThisWindow && targetHwnd) SwitchToThisWindow(targetHwnd, 1);
+    setTimeout(() => {
+      try { sendMacro(); } catch (err) { console.warn('sendMacro failed:', err?.message || err); }
+    }, 50);
+  } else {
+    try { sendMacro(); } catch (err) { console.warn('sendMacro failed:', err?.message || err); }
   }
 });
-ipcMain.on('hide-overlay', () => { if (overlay) overlay.hide(); });
+ipcMain.on('hide-overlay', () => {
+  if (overlay && !overlay.isDestroyed()) {
+    const win = overlay;
+    overlay = null;
+    overlayReady = false;
+    win.destroy();
+  }
+});
 
-// ── Macro: immediate Ctrl+C, type "Go FASER", Enter ───────────────────────
+// ── Macro: immediate Ctrl+C, type phrase, Enter ───────────────────────────
 function sendMacro() {
-  // Pick a random phrase from a list of similar phrases and type it out
   const phrases = [
     'FASTER',
     'FASTER',
@@ -253,11 +315,11 @@ function sendMacroWindows(text) {
     if (shiftState & 1) keybd_event(0x10, 0, KEYUP, 0); // Shift up
   };
 
-  // Ctrl+C (interrupt)
-  keybd_event(VK_CONTROL, 0, 0, 0);
+  // Alt+C
+  keybd_event(VK_MENU, 0, 0, 0);
   keybd_event(VK_C, 0, 0, 0);
   keybd_event(VK_C, 0, KEYUP, 0);
-  keybd_event(VK_CONTROL, 0, KEYUP, 0);
+  keybd_event(VK_MENU, 0, KEYUP, 0);
   for (const ch of text) tapChar(ch);
   keybd_event(VK_RETURN, 0, 0, 0);
   keybd_event(VK_RETURN, 0, KEYUP, 0);
@@ -267,13 +329,13 @@ function sendMacroMac(text) {
   const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const interruptScript = [
     'tell application "System Events"',
-    '  key code 8 using {control down}', // Ctrl+C interrupt
+    '  key code 8 using {option down}',
     'end tell'
   ].join('\n');
   const typeAndEnterScript = [
     'tell application "System Events"',
     `  keystroke "${escaped}"`,
-    '  key code 36', // Enter
+    '  key code 36',
     'end tell'
   ].join('\n');
 
@@ -282,12 +344,9 @@ function sendMacroMac(text) {
       console.warn('mac macro failed (enable Accessibility for terminal/app):', err.message);
       return;
     }
-
     setTimeout(() => {
       execFile('osascript', ['-e', typeAndEnterScript], err2 => {
-        if (err2) {
-          console.warn('mac macro failed (enable Accessibility for terminal/app):', err2.message);
-        }
+        if (err2) console.warn('mac macro failed:', err2.message);
       });
     }, 300);
   });
@@ -296,15 +355,9 @@ function sendMacroMac(text) {
 function sendMacroLinux(text) {
   execFile(
     'xdotool',
-    [
-      'key', '--clearmodifiers', 'ctrl+c',
-      'type', '--delay', '1', '--clearmodifiers', '--', text,
-      'key', 'Return',
-    ],
+    ['key', '--clearmodifiers', 'alt+c', 'type', '--delay', '1', '--clearmodifiers', '--', text, 'key', 'Return'],
     err => {
-      if (err) {
-        console.warn('linux macro failed. Install xdotool:', err.message);
-      }
+      if (err) console.warn('linux macro failed. Install xdotool:', err.message);
     }
   );
 }
@@ -318,6 +371,10 @@ app.whenReady().then(async () => {
   tray.setToolTip('OpenWhip - click for whip');
   rebuildTrayMenu();
   tray.on('click', toggleOverlay);
+
+  // Keep targetHwnd pointing at the last real app window so the tray-click
+  // timing can't race with Windows shifting focus to the taskbar.
+  if (process.platform === 'win32') setInterval(pollForegroundWindow, 500);
 });
 
 app.on('window-all-closed', e => e.preventDefault()); // keep alive in tray

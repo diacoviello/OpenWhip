@@ -5,10 +5,31 @@
   * { margin: 0; padding: 0; cursor: none; }
   html, body { overflow: hidden; background: transparent; width: 100%; height: 100%; }
   canvas { display: block; }
+  #stats {
+    position: fixed;
+    top: 24px;
+    left: 24px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    pointer-events: none;
+    line-height: 1.7;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  #stats.visible { opacity: 1; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="stats">
+  <div>Whips this session: <span id="stat-session">0</span></div>
+  <div>Total whips ever:&nbsp;&nbsp;<span id="stat-total">0</span></div>
+</div>
 <script>
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -49,14 +70,14 @@ const P = {
   wallFriction:    0.86,   // tangential damping on wall hit
 
   // Crack detection
-  crackSpeed:     130,     // tip velocity threshold to trigger crack
-  crackCooldownMs:200,   // min ms between cracks
+  crackSpeed:     300,     // tip velocity threshold to trigger crack
+  crackCooldownMs:1000,  // min ms between cracks
   firstCrackGraceMs: 350, // no crack (macro) until this long after spawn
 
   // Visuals
   lineWidthHandle: 7,      // rope thickness near handle
   lineWidthTip:    5,      // rope thickness near tip
-  outlineWidth:   3,      // white halo on each side of the stroke (approx px)
+  outlineWidth:   3,      // white halo on each Speed it upside of the stroke (approx px)
   handleExtraWidth: 5,    // added core + outline thickness on first handleThickSegments links only
   handleThickSegments: 2, // how many links from the handle get handleExtraWidth
   bgAlpha:        0.011,  // barely-visible bg so window captures mouse events
@@ -88,9 +109,7 @@ let handleAngVel = 0;
 const WHIP_CRACK_SOUNDS = ['sounds/A.mp3', 'sounds/B.mp3', 'sounds/C.mp3', 'sounds/D.mp3', 'sounds/E.mp3'];
 
 document.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
-document.addEventListener('mousedown', () => {
-  if (whip && !dropping) dropping = true;
-});
+document.addEventListener('mousedown', () => { if (whip && !dropping) dropping = true; });
 
 // ── Whip creation ───────────────────────────────────────────────────────────
 function spawnWhip(mx, my) {
@@ -435,6 +454,16 @@ function loop() {
 }
 loop();
 
+// ── Stats HUD ───────────────────────────────────────────────────────────────
+const statsEl      = document.getElementById('stats');
+const statSession  = document.getElementById('stat-session');
+const statTotal    = document.getElementById('stat-total');
+
+window.bridge.onCountUpdate(({ session, total }) => {
+  statSession.textContent = session;
+  statTotal.textContent   = total;
+});
+
 // ── IPC from main process ───────────────────────────────────────────────────
 window.bridge.onSpawnWhip(() => {
   whip = spawnWhip(mouseX || W / 2, mouseY || H / 2);
@@ -443,11 +472,15 @@ window.bridge.onSpawnWhip(() => {
   prevMouseY = mouseY;
   handleAngle = P.baseTargetAngle;
   handleAngVel = 0;
+  statSession.textContent = '0';
+  statsEl.classList.add('visible');
 });
 
 window.bridge.onDropWhip(() => {
   if (whip && !dropping) dropping = true;
+  statsEl.classList.remove('visible');
 });
+
 
 </script>
 </body>
