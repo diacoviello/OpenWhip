@@ -22,6 +22,37 @@ let tray, overlay;
 let overlayReady = false;
 let spawnQueued = false;
 
+// ── Crack count persistence ──────────────────────────────────────────────────
+let crackCount = 0;
+let statsPath;
+
+function loadCrackCount() {
+  try {
+    const data = JSON.parse(fs.readFileSync(statsPath, 'utf8'));
+    crackCount = (typeof data.crackCount === 'number') ? data.crackCount : 0;
+  } catch {
+    crackCount = 0;
+  }
+}
+
+function saveCrackCount() {
+  try {
+    fs.writeFileSync(statsPath, JSON.stringify({ crackCount }), 'utf8');
+  } catch (e) {
+    console.warn('openwhip: failed to save crack count:', e.message);
+  }
+}
+
+function rebuildTrayMenu() {
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: `Cracks: ${crackCount}`, enabled: false },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() },
+    ])
+  );
+}
+
 const VK_CONTROL = 0x11;
 const VK_RETURN  = 0x0D;
 const VK_C       = 0x43;
@@ -172,6 +203,9 @@ function toggleOverlay() {
 
 // ── IPC ─────────────────────────────────────────────────────────────────────
 ipcMain.on('whip-crack', () => {
+  crackCount++;
+  saveCrackCount();
+  rebuildTrayMenu();
   try {
     sendMacro();
   } catch (err) {
@@ -277,13 +311,12 @@ function sendMacroLinux(text) {
 
 // ── App lifecycle ───────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
+  statsPath = path.join(app.getPath('userData'), 'stats.json');
+  loadCrackCount();
+
   tray = new Tray(await getTrayIcon());
   tray.setToolTip('OpenWhip - click for whip');
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Quit', click: () => app.quit() },
-    ])
-  );
+  rebuildTrayMenu();
   tray.on('click', toggleOverlay);
 });
 
