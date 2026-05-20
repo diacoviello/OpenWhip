@@ -2,5 +2,6 @@ node_modules/
 dist/
 out/
 *.tgz
-text.txt
 main-clauded.js
+main-OG.js
+main copy.js
