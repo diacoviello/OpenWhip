@@ -107,6 +107,8 @@ let handleAngle = P.baseTargetAngle;
 let handleAngVel = 0;
 
 const WHIP_CRACK_SOUNDS = ['sounds/A.mp3', 'sounds/B.mp3', 'sounds/C.mp3', 'sounds/D.mp3', 'sounds/E.mp3'];
+let currentVolume = 1.0;
+let isMuted = false;
 
 document.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
 document.addEventListener('mousedown', () => { if (whip && !dropping) dropping = true; });
@@ -183,6 +185,7 @@ function playCrackSound() {
   if (!WHIP_CRACK_SOUNDS.length) return;
   const src = WHIP_CRACK_SOUNDS[Math.floor(Math.random() * WHIP_CRACK_SOUNDS.length)];
   const a = new Audio(src);
+  a.volume = isMuted ? 0 : currentVolume;
   a.play().catch(() => {});
 }
 
@@ -479,6 +482,11 @@ window.bridge.onSpawnWhip(() => {
 window.bridge.onDropWhip(() => {
   if (whip && !dropping) dropping = true;
   statsEl.classList.remove('visible');
+});
+
+window.bridge.onSetVolume(({ volume, muted }) => {
+  currentVolume = volume;
+  isMuted = muted;
 });
 
 

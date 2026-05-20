@@ -26,11 +26,15 @@ let spawnQueued=false;
 let crackCount=0;
 let sessionCrackCount=0;
 let statsPath;
+let volume=100; // 0–100
+let muted=false;
 
 function loadCrackCount() {
 	try {
 		const data=JSON.parse( fs.readFileSync( statsPath, 'utf8' ) );
 		crackCount=( typeof data.crackCount==='number' )? data.crackCount:0;
+		volume=( typeof data.volume==='number' )? data.volume:100;
+		muted=( typeof data.muted==='boolean' )? data.muted:false;
 	} catch {
 		crackCount=0;
 	}
@@ -38,16 +42,44 @@ function loadCrackCount() {
 
 function saveCrackCount() {
 	try {
-		fs.writeFileSync( statsPath, JSON.stringify( { crackCount } ), 'utf8' );
+		fs.writeFileSync( statsPath, JSON.stringify( { crackCount, volume, muted } ), 'utf8' );
 	} catch ( e ) {
 		console.warn( 'openwhip: failed to save crack count:', e.message );
 	}
 }
 
+function sendVolumeToOverlay() {
+	if ( overlay&&overlayReady ) overlay.webContents.send( 'set-volume', { volume: volume/100, muted } );
+}
+
 function rebuildTrayMenu() {
+	const setVolume=v => {
+		volume=v;
+		saveCrackCount();
+		rebuildTrayMenu();
+		sendVolumeToOverlay();
+	};
+	const toggleMute=() => {
+		muted=!muted;
+		saveCrackCount();
+		rebuildTrayMenu();
+		sendVolumeToOverlay();
+	};
 	tray.setContextMenu(
 		Menu.buildFromTemplate( [
 			{ label: `Cracks: ${crackCount}`, enabled: false },
+			{ type: 'separator' },
+			{
+				label: 'Volume',
+				submenu: [
+					{ label: 'Mute', type: 'checkbox', checked: muted, click: toggleMute },
+					{ type: 'separator' },
+					{ label: '25%',  type: 'radio', checked: volume===25,  click: () => setVolume( 25 ) },
+					{ label: '50%',  type: 'radio', checked: volume===50,  click: () => setVolume( 50 ) },
+					{ label: '75%',  type: 'radio', checked: volume===75,  click: () => setVolume( 75 ) },
+					{ label: '100%', type: 'radio', checked: volume===100, click: () => setVolume( 100 ) },
+				],
+			},
 			{ type: 'separator' },
 			{ label: 'Quit', click: () => app.quit() },
 		] )
@@ -174,6 +206,7 @@ function createOverlay() {
 	overlay.loadFile( 'overlay.html' );
 	overlay.webContents.on( 'did-finish-load', () => {
 		overlayReady=true;
+		sendVolumeToOverlay();
 		if ( spawnQueued&&overlay&&overlay.isVisible() ) {
 			spawnQueued=false;
 			overlay.webContents.send( 'spawn-whip' );
