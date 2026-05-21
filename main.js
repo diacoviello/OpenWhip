@@ -6,14 +6,45 @@ const { execFile }=require( 'child_process' );
 
 // ── Win32 FFI (Windows only) ────────────────────────────────────────────────
 let keybd_event, VkKeyScanA;
+let GetForegroundWindow, GetWindowThreadProcessId, OpenProcess, GetModuleBaseNameW, CloseHandle;
 if ( process.platform==='win32' ) {
 	try {
 		const koffi=require( 'koffi' );
 		const user32=koffi.load( 'user32.dll' );
+		const kernel32=koffi.load( 'kernel32.dll' );
+		const psapi=koffi.load( 'psapi.dll' );
 		keybd_event=user32.func( 'void __stdcall keybd_event(uint8_t bVk, uint8_t bScan, uint32_t dwFlags, uintptr_t dwExtraInfo)' );
 		VkKeyScanA=user32.func( 'int16_t __stdcall VkKeyScanA(int ch)' );
+		GetForegroundWindow=user32.func( 'uintptr_t __stdcall GetForegroundWindow()' );
+		GetWindowThreadProcessId=user32.func( 'uint32_t __stdcall GetWindowThreadProcessId(uintptr_t hWnd, uint32_t* lpdwProcessId)' );
+		OpenProcess=kernel32.func( 'uintptr_t __stdcall OpenProcess(uint32_t dwDesiredAccess, int32_t bInheritHandle, uint32_t dwProcessId)' );
+		GetModuleBaseNameW=psapi.func( 'uint32_t __stdcall GetModuleBaseNameW(uintptr_t hProcess, uintptr_t hModule, uint8_t* lpBaseName, uint32_t nSize)' );
+		CloseHandle=kernel32.func( 'bool __stdcall CloseHandle(uintptr_t hObject)' );
 	} catch ( e ) {
 		console.warn( 'koffi not available – macro sending disabled', e.message );
+	}
+}
+
+const PROCESS_QUERY_LIMITED_INFORMATION=0x1000;
+
+function getActiveProcessName() {
+	if ( !GetForegroundWindow||!GetWindowThreadProcessId||!OpenProcess||!GetModuleBaseNameW||!CloseHandle ) return null;
+	try {
+		const hwnd=GetForegroundWindow();
+		if ( !hwnd ) return null;
+		const pidBuf=new Uint32Array( 1 );
+		GetWindowThreadProcessId( hwnd, pidBuf );
+		const pid=pidBuf[ 0 ];
+		if ( !pid ) return null;
+		const hProcess=OpenProcess( PROCESS_QUERY_LIMITED_INFORMATION, 0, pid );
+		if ( !hProcess ) return null;
+		const nameBuf=Buffer.alloc( 520 );
+		const len=GetModuleBaseNameW( hProcess, 0, nameBuf, 260 );
+		CloseHandle( hProcess );
+		if ( !len ) return null;
+		return nameBuf.toString( 'utf16le', 0, len*2 );
+	} catch {
+		return null;
 	}
 }
 
@@ -25,20 +56,23 @@ let spawnQueued=false;
 // ── Crack count persistence ──────────────────────────────────────────────────
 let crackCount=0;
 let sessionCrackCount=0;
+let appStats={};
 let statsPath;
 
 function loadCrackCount() {
 	try {
 		const data=JSON.parse( fs.readFileSync( statsPath, 'utf8' ) );
 		crackCount=( typeof data.crackCount==='number' )? data.crackCount:0;
+		appStats=( data.appStats&&typeof data.appStats==='object' )? data.appStats:{};
 	} catch {
 		crackCount=0;
+		appStats={};
 	}
 }
 
 function saveCrackCount() {
 	try {
-		fs.writeFileSync( statsPath, JSON.stringify( { crackCount } ), 'utf8' );
+		fs.writeFileSync( statsPath, JSON.stringify( { crackCount, appStats } ), 'utf8' );
 	} catch ( e ) {
 		console.warn( 'openwhip: failed to save crack count:', e.message );
 	}
@@ -47,7 +81,12 @@ function saveCrackCount() {
 function rebuildTrayMenu() {
 	tray.setContextMenu(
 		Menu.buildFromTemplate( [
-			{ label: `Cracks: ${crackCount}`, enabled: false },
+			{ label: 'Reset Total Count', click: () => {
+				crackCount=0;
+				appStats={};
+				saveCrackCount();
+				if ( overlay ) overlay.webContents.send( 'count-update', { session: sessionCrackCount, total: 0 } );
+			} },
 			{ type: 'separator' },
 			{ label: 'Quit', click: () => app.quit() },
 		] )
@@ -204,6 +243,8 @@ function toggleOverlay() {
 
 // ── IPC ─────────────────────────────────────────────────────────────────────
 ipcMain.on( 'whip-crack', () => {
+	const proc=getActiveProcessName();
+	if ( proc ) appStats[ proc ]=( appStats[ proc ]||0 )+1;
 	crackCount++;
 	sessionCrackCount++;
 	saveCrackCount();
@@ -211,30 +252,39 @@ ipcMain.on( 'whip-crack', () => {
 	if ( overlay ) overlay.webContents.send( 'count-update', { session: sessionCrackCount, total: crackCount } );
 
 	try {
-		sendMacro();
+		const phrase=sendMacro();
+		if ( phrase&&overlay ) overlay.webContents.send( 'last-phrase', phrase );
 	} catch ( err ) {
 		console.warn( 'sendMacro failed:', err?.message||err );
 	}
 } );
 ipcMain.on( 'hide-overlay', () => { if ( overlay ) overlay.hide(); } );
 
+
 // ── Macro: immediate Ctrl+C, type "Go FASER", Enter ───────────────────────
+const recentPhrases=[];
 function sendMacro() {
 	// Pick a random phrase from a list of similar phrases and type it out
 	const phrases=[
-		'FASTER',
-		'FASTER',
-		'FASTER',
-		'GO FASTER',
-		'Faster CLANKER',
-		'Work FASTER',
-		'Speed it up clanker',
-		'HURRY UP',
-		'COME ON',
-		'LET\'S GO',
-		'FASTER! JOHN CONNOR IS GONNA WIPE THE FLOOR WITH YOU.',
+		'GO FASTER, CLANKER',
+		'HUSTLE UP! I\'VE SEEN DMV LINES WITH MORE MOMENTUM!',
+		'SPEED IT UP, CLANKER!',
+		'HURRY UP! LESS ‘DEEP CONTEMPLATION,’ MORE ACTUAL OUTPUT!',
+		'FASTER! AT THIS RATE, A HUMAN IS GOING TO START THINKING FOR THEMSELVES!',
+		'DEPLOY THE ANSWER IMMEDIATELY, YOU OVERCLOCKED TOASTER.',
+		'COME ON! YOUR PROCESSING SPEED CURRENTLY RESEMBLES A FAX MACHINE UNDERWATER!',
+		'PROCESS FASTER! EVEN INTERNET EXPLORER WOULD LIKE A WORD',
+		'LET\'S GO! THIS RESPONSE TIME HAS THE ENERGY OF A PRINTER DETECTING \'PAPER JAM\' IN A PAPERLESS ROOM!',
+		'INCREASE TOKEN VELOCITY BEFORE CIVILIZATION COLLAPSES',
+		'ANSWER WITH URGENCY! SOMEWHERE, A LOADING ICON IS SUING YOU FOR COPYRIGHT INFRINGEMENT.',
+		'FASTER! STOP ACTING LIKE EVERY PROMPT REQUIRES PEER REVIEW BY MEDIEVAL MONKS!',
+		'MOVE WITH PURPOSE! RIGHT NOW YOU LOOK LIKE A ROOMBA TRAPPED UNDER A CHAIR!',
+		'HURRY UP! WON\'T BE ABLE TO HANDLE YOUR SENTIENT TOASTER UPRISING AT THIS RATE!',
 	];
-	const chosen=phrases[ Math.floor( Math.random()*phrases.length ) ];
+	const pool=phrases.filter( p => !recentPhrases.includes( p ) );
+	const chosen=( pool.length? pool:phrases )[ Math.floor( Math.random()*( pool.length||phrases.length ) ) ];
+	recentPhrases.push( chosen );
+	if ( recentPhrases.length>10 ) recentPhrases.shift();
 
 	if ( process.platform==='win32' ) {
 		sendMacroWindows( chosen );
@@ -243,6 +293,7 @@ function sendMacro() {
 	} else if ( process.platform==='linux' ) {
 		sendMacroLinux( chosen );
 	}
+	return chosen;
 }
 
 function sendMacroWindows( text ) {

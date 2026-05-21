@@ -36,6 +36,7 @@
     "overlay.html",
     "sounds",
     "icon",
+    "assets",
     "bin/openwhip.js",
     "bin/badclaude.js",
     "README.md"
