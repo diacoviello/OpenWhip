@@ -58,12 +58,16 @@ let crackCount=0;
 let sessionCrackCount=0;
 let appStats={};
 let statsPath;
+let volume=1.0;
+let muted=false;
 
 function loadCrackCount() {
 	try {
 		const data=JSON.parse( fs.readFileSync( statsPath, 'utf8' ) );
 		crackCount=( typeof data.crackCount==='number' )? data.crackCount:0;
 		appStats=( data.appStats&&typeof data.appStats==='object' )? data.appStats:{};
+		if ( typeof data.volume==='number' ) volume=data.volume;
+		if ( typeof data.muted==='boolean' ) muted=data.muted;
 	} catch {
 		crackCount=0;
 		appStats={};
@@ -72,13 +76,18 @@ function loadCrackCount() {
 
 function saveCrackCount() {
 	try {
-		fs.writeFileSync( statsPath, JSON.stringify( { crackCount, appStats } ), 'utf8' );
+		fs.writeFileSync( statsPath, JSON.stringify( { crackCount, appStats, volume, muted } ), 'utf8' );
 	} catch ( e ) {
 		console.warn( 'openwhip: failed to save crack count:', e.message );
 	}
 }
 
+function sendVolumeUpdate() {
+	if ( overlay ) overlay.webContents.send( 'volume-update', { volume, muted } );
+}
+
 function rebuildTrayMenu() {
+	const volLevels=[ 1.0, 0.75, 0.5, 0.25 ];
 	tray.setContextMenu(
 		Menu.buildFromTemplate( [
 			{ label: 'Reset Total Count', click: () => {
@@ -87,6 +96,19 @@ function rebuildTrayMenu() {
 				saveCrackCount();
 				if ( overlay ) overlay.webContents.send( 'count-update', { session: sessionCrackCount, total: 0 } );
 			} },
+			{ type: 'separator' },
+			{ label: 'Mute', type: 'checkbox', checked: muted, click: () => {
+				muted=!muted;
+				saveCrackCount();
+				sendVolumeUpdate();
+				rebuildTrayMenu();
+			} },
+			{ label: 'Volume', submenu: volLevels.map( v => ( {
+				label: `${v*100}%`,
+				type: 'radio',
+				checked: !muted&&volume===v,
+				click: () => { volume=v; muted=false; saveCrackCount(); sendVolumeUpdate(); rebuildTrayMenu(); },
+			} ) ) },
 			{ type: 'separator' },
 			{ label: 'Quit', click: () => app.quit() },
 		] )
@@ -213,6 +235,7 @@ function createOverlay() {
 	overlay.loadFile( 'overlay.html' );
 	overlay.webContents.on( 'did-finish-load', () => {
 		overlayReady=true;
+		overlay.webContents.send( 'volume-update', { volume, muted } );
 		if ( spawnQueued&&overlay&&overlay.isVisible() ) {
 			spawnQueued=false;
 			overlay.webContents.send( 'spawn-whip' );

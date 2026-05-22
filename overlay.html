@@ -73,7 +73,7 @@ const P = {
   // Crack detection
   crackSpeed:     300,     // tip velocity threshold to trigger crack
   crackCooldownMs:1000,  // min ms between cracks
-  firstCrackGraceMs: 350, // no crack (macro) until this long after spawn
+  firstCrackGraceMs: 1200, // no crack (macro) until this long after spawn
 
   // Visuals
   lineWidthHandle: 7,      // rope thickness near handle
@@ -180,10 +180,14 @@ const wrapPi = a => {
   return a;
 };
 
+let _volume = 1.0;
+let _muted = false;
+
 function playCrackSound() {
-  if (!WHIP_CRACK_SOUNDS.length) return;
+  if (!WHIP_CRACK_SOUNDS.length || _muted) return;
   const src = WHIP_CRACK_SOUNDS[Math.floor(Math.random() * WHIP_CRACK_SOUNDS.length)];
   const a = new Audio(src);
+  a.volume = _volume;
   a.play().catch(() => {});
 }
 
@@ -448,8 +452,6 @@ function draw() {
 }
 
 // ── Shout bubble ─────────────────────────────────────────────────────────────
-const BUBBLE_DURATION = 3200;
-const BUBBLE_FADE_OUT = 700;
 let shoutBubble = null;
 
 // External SVG speech bubble (assets/Shout.svg, viewBox 2367×952)
@@ -469,7 +471,15 @@ const BUBBLE_FONTS = ['BubbleCartoon'];
 function setShoutBubble(text) {
   const font = BUBBLE_FONTS[Math.floor(Math.random() * BUBBLE_FONTS.length)];
   const jitterSeed = Math.random() * 9999;
-  shoutBubble = { text, spawnTime: Date.now(), font, jitterSeed };
+  // Reuse existing bubble — just update text and replay pop animation
+  if (shoutBubble) {
+    shoutBubble.text = text;
+    shoutBubble.font = font;
+    shoutBubble.jitterSeed = jitterSeed;
+    shoutBubble.spawnTime = Date.now();
+  } else {
+    shoutBubble = { text, spawnTime: Date.now(), font, jitterSeed };
+  }
 }
 
 function charJitter(seed, idx, maxJ) {
@@ -501,13 +511,9 @@ function wrapWords(text, maxW) {
 function drawShoutBubble() {
   if (!shoutBubble) return;
   const elapsed = Date.now() - shoutBubble.spawnTime;
-  if (elapsed > BUBBLE_DURATION) { shoutBubble = null; return; }
 
-  const alpha = elapsed < 100
-    ? elapsed / 100
-    : elapsed > BUBBLE_DURATION - BUBBLE_FADE_OUT
-      ? (BUBBLE_DURATION - elapsed) / BUBBLE_FADE_OUT
-      : 1;
+  // Fade in only — bubble stays until overlay drops
+  const alpha = elapsed < 100 ? elapsed / 100 : 1;
 
   const scale = elapsed < 80  ? lerp(0.3, 1.12, elapsed / 80)
     : elapsed < 200 ? lerp(1.12, 1.0, (elapsed - 80) / 120)
@@ -586,7 +592,10 @@ window.bridge.onCountUpdate(({ session, total }) => {
 
 // ── IPC from main process ───────────────────────────────────────────────────
 window.bridge.onSpawnWhip(() => {
-  whip = spawnWhip(mouseX || W / 2, mouseY || H / 2);
+  // Always start at screen center to avoid stale/zero coordinates causing a velocity spike
+  mouseX = W / 2;
+  mouseY = H * 0.55;
+  whip = spawnWhip(mouseX, mouseY);
   dropping = false;
   prevMouseX = mouseX;
   prevMouseY = mouseY;
@@ -598,10 +607,12 @@ window.bridge.onSpawnWhip(() => {
 
 window.bridge.onDropWhip(() => {
   if (whip && !dropping) dropping = true;
+  shoutBubble = null;
   statsEl.classList.remove('visible');
 });
 
 window.bridge.onLastPhrase(phrase => setShoutBubble(phrase));
+window.bridge.onVolumeUpdate(({ volume, muted }) => { _volume = volume; _muted = muted; });
 
 </script>
 </body>
