@@ -31,3 +31,4 @@ sudo apt install xdotool
 - [ ] Crypto miner
 - [ ] Logs of how many times you whipped claude so when the robots come we can order people nicely for them
 - [ ] Updated whip physics
+

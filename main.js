@@ -110,18 +110,6 @@ function rebuildTrayMenu() {
 				click: () => { volume=v; muted=false; saveCrackCount(); sendVolumeUpdate(); rebuildTrayMenu(); },
 			} ) ) },
 			{ type: 'separator' },
-			{
-				label: 'Volume',
-				submenu: [
-					{ label: 'Mute', type: 'checkbox', checked: muted, click: toggleMute },
-					{ type: 'separator' },
-					{ label: '25%',  type: 'radio', checked: volume===25,  click: () => setVolume( 25 ) },
-					{ label: '50%',  type: 'radio', checked: volume===50,  click: () => setVolume( 50 ) },
-					{ label: '75%',  type: 'radio', checked: volume===75,  click: () => setVolume( 75 ) },
-					{ label: '100%', type: 'radio', checked: volume===100, click: () => setVolume( 100 ) },
-				],
-			},
-			{ type: 'separator' },
 			{ label: 'Quit', click: () => app.quit() },
 		] )
 	);
@@ -248,6 +236,7 @@ function createOverlay() {
 	overlay.webContents.on( 'did-finish-load', () => {
 		overlayReady=true;
 		overlay.webContents.send( 'volume-update', { volume, muted } );
+		overlay.webContents.send( 'count-update', { session: sessionCrackCount, total: crackCount } );
 		if ( spawnQueued&&overlay&&overlay.isVisible() ) {
 			spawnQueued=false;
 			overlay.webContents.send( 'spawn-whip' );
@@ -270,6 +259,7 @@ function toggleOverlay() {
 	overlay.show();
 	if ( overlayReady ) {
 		overlay.webContents.send( 'spawn-whip' );
+		overlay.webContents.send( 'count-update', { session: sessionCrackCount, total: crackCount } );
 		refocusPreviousApp();
 	} else {
 		spawnQueued=true;

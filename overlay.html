@@ -4,32 +4,86 @@
 <style>
   * { margin: 0; padding: 0; cursor: none; }
   html, body { overflow: hidden; background: transparent; width: 100%; height: 100%; }
-  canvas { display: block; }
+  canvas { display: block; position: relative; z-index: 10; }
   #stats {
     position: fixed;
-    top: 24px;
-    left: 24px;
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
-    font-family: 'Courier New', monospace;
-    font-size: 18px;
-    padding: 10px 16px;
-    border-radius: 8px;
+    top: 20px;
+    left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(94, 0, 0, 0.88);
+    border: 1px solid rgba(245, 196, 0, 0.25);
+    border-radius: 24px;
+    padding: 12px 22px 12px 12px;
     pointer-events: none;
-    line-height: 1;
-    white-space: nowrap;
+    transform: scale(0.93);
+    transform-origin: left top;
     opacity: 0;
-    transition: opacity 0.25s ease;
+    transition: opacity 0.3s ease;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
   }
   #stats.visible { opacity: 1; }
-  @font-face { font-family: 'BubbleCartoon'; src: url('fonts/BD_Cartoon_Shout.ttf'); }
+  #stats-logo {
+    height: 150px;
+    width: auto;
+    object-fit: contain;
+    flex-shrink: 0;
+    margin-right: 6px;
+  }
+  #stats-divider {
+    width: 1px;
+    height: 120px;
+    background: rgba(82, 82, 82, 0.12);
+    flex-shrink: 0;
+  }
+  #stats-content {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    justify-content: center;
+  }
+  .stat-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .stat-label {
+    font-family: "Georgia", serif;
+    font-size: 36px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: rgba(0, 0, 0, 0.87);
+    text-transform: uppercase;
+    min-width: 120px;
+  }
+  .stat-value {
+    font-family: "60s Scoreboard";
+    font-size: 64px;
+    color: #F5C400;
+    line-height: 0.9;
+    min-width: 42px;
+    text-align: right;
+  }
+  @font-face { font-family: 'BubbleCartoon'; src: url('fonts/BD_Cartoon_Shout.ttf') format('truetype'); font-display: swap; }
+  @font-face { font-family: '60s Scoreboard'; src: url('fonts/60s%20Scoreboard.ttf') format('truetype'); font-display: swap; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="stats">
-  <div>Whips this session: <span id="stat-session">0</span></div>
-  <div>Total whips ever:&nbsp;&nbsp;<span id="stat-total">0</span></div>
+  <img id="stats-logo" src="assets/openwhip.png" alt="OpenWhip">
+  <div id="stats-divider"></div>
+  <div id="stats-content">
+    <div class="stat-row">
+      <span class="stat-label">Session:</span>
+      <span class="stat-value" id="stat-session">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">All&nbsp;Time:</span>
+      <span class="stat-value" id="stat-total">0</span>
+    </div>
+  </div>
 </div>
 <script>
 
@@ -112,7 +166,9 @@ let currentVolume = 1.0;
 let isMuted = false;
 
 document.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
-document.addEventListener('mousedown', () => { if (whip && !dropping) dropping = true; });
+document.addEventListener('mousedown', () => {
+  if (whip && !dropping) { dropping = true; shoutBubble = null; }
+});
 
 // ── Whip creation ───────────────────────────────────────────────────────────
 function spawnWhip(mx, my) {
@@ -396,6 +452,7 @@ function update() {
   if (dropping && whip.every(p => p.y > H + 60)) {
     whip = null;
     dropping = false;
+    shoutBubble = null;
     window.bridge.hideOverlay();
   }
   prevMouseX = mouseX;
@@ -467,6 +524,8 @@ const _SVG_BCX = 1183.5; // body center x (horizontal midpoint)
 const _SVG_BCY = 450;    // body center y
 const _SVG_IW = 1700;    // inner text area width (inside spike bases)
 const _SVG_IH = 460;     // inner text area height — reduced to add top/bottom padding
+// Scale factor to shrink bubble (0.85 = 15% smaller)
+const BUBBLE_SCALE = 0.85;
 
 const BUBBLE_FONTS = ['BubbleCartoon'];
 
@@ -511,21 +570,35 @@ function wrapWords(text, maxW) {
 
 
 function drawShoutBubble() {
-  if (!shoutBubble) return;
+  if (!shoutBubble || dropping) return;
   const elapsed = Date.now() - shoutBubble.spawnTime;
 
-  // Fade in only — bubble stays until overlay drops
-  const alpha = elapsed < 100 ? elapsed / 100 : 1;
+  // Fade in, stay visible for 6 seconds (6000ms), then fade out over 500ms
+  const SHOW_DURATION = 6000;    // 6 seconds
+  const FADE_OUT_DURATION = 500; // fade over 0.5 seconds
+  const TOTAL_DURATION = SHOW_DURATION + FADE_OUT_DURATION;
+
+  let alpha;
+  if (elapsed < 100) {
+    alpha = elapsed / 100; // fade in
+  } else if (elapsed < SHOW_DURATION) {
+    alpha = 1; // stay visible
+  } else if (elapsed < TOTAL_DURATION) {
+    alpha = 1 - (elapsed - SHOW_DURATION) / FADE_OUT_DURATION; // fade out
+  } else {
+    shoutBubble = null; // clear bubble after fade completes
+    return;
+  }
 
   const scale = elapsed < 80  ? lerp(0.3, 1.12, elapsed / 80)
     : elapsed < 200 ? lerp(1.12, 1.0, (elapsed - 80) / 120)
     : 1.0;
 
   // SVG bubble — full-size coords, scaled via canvas transform for pop animation
-  const svgW = W * 0.60;
+  const svgW = W * 0.60 * BUBBLE_SCALE;
   const svgH = svgW * (_SVG_H / _SVG_W);
   const svgX = (W - svgW) / 2;
-  const svgY = H * 0.02;
+  const svgY = (H - svgH) / 2;
   const svgScale = svgW / _SVG_W;
   const textCX = W / 2;
   const textCY = svgY + _SVG_BCY * svgScale;
@@ -594,7 +667,7 @@ window.bridge.onCountUpdate(({ session, total }) => {
 
 // ── IPC from main process ───────────────────────────────────────────────────
 window.bridge.onSpawnWhip(() => {
-  // Always start at screen center to avoid stale/zero coordinates causing a velocity spike
+  shoutBubble = null;
   mouseX = W / 2;
   mouseY = H * 0.55;
   whip = spawnWhip(mouseX, mouseY);
@@ -608,9 +681,7 @@ window.bridge.onSpawnWhip(() => {
 });
 
 window.bridge.onDropWhip(() => {
-  if (whip && !dropping) dropping = true;
-  shoutBubble = null;
-  statsEl.classList.remove('visible');
+  if (whip && !dropping) { dropping = true; shoutBubble = null; }
 });
 
 window.bridge.onLastPhrase(phrase => setShoutBubble(phrase));
