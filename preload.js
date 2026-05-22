@@ -6,5 +6,6 @@ contextBridge.exposeInMainWorld('bridge', {
   onSpawnWhip: (fn) => ipcRenderer.on('spawn-whip', () => fn()),
   onDropWhip: (fn) => ipcRenderer.on('drop-whip', () => fn()),
   onCountUpdate: (fn) => ipcRenderer.on('count-update', (_, data) => fn(data)),
-  onSetVolume: (fn) => ipcRenderer.on('set-volume', (_, data) => fn(data)),
+  onLastPhrase: (fn) => ipcRenderer.on('last-phrase', (_, data) => fn(data)),
+  onVolumeUpdate: (fn) => ipcRenderer.on('volume-update', (_, data) => fn(data)),
 });
