@@ -7,29 +7,79 @@
   canvas { display: block; }
   #stats {
     position: fixed;
-    top: 24px;
-    left: 24px;
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
-    font-family: 'Courier New', monospace;
-    font-size: 18px;
-    padding: 10px 16px;
-    border-radius: 8px;
+    top: 20px;
+    left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 21px;
+    background: rgba(12, 12, 12, 0.88);
+    border: 1px solid rgba(245, 196, 0, 0.25);
+    border-radius: 24px;
+    padding: 15px 27px 15px 15px;
     pointer-events: none;
-    line-height: 1;
-    white-space: nowrap;
     opacity: 0;
-    transition: opacity 0.25s ease;
+    transition: opacity 0.3s ease;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
   }
   #stats.visible { opacity: 1; }
+  #stats-logo {
+    height: 87px;
+    width: auto;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+  #stats-divider {
+    width: 1px;
+    height: 66px;
+    background: rgba(255,255,255,0.12);
+    flex-shrink: 0;
+  }
+  #stats-content {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .stat-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .stat-label {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.45);
+    text-transform: uppercase;
+    min-width: 87px;
+  }
+  .stat-value {
+    font-family: 'Courier New', monospace;
+    font-size: 33px;
+    font-weight: bold;
+    color: #F5C400;
+    line-height: 1;
+    min-width: 42px;
+    text-align: right;
+  }
   @font-face { font-family: 'BubbleCartoon'; src: url('fonts/BD_Cartoon_Shout.ttf'); }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="stats">
-  <div>Whips this session: <span id="stat-session">0</span></div>
-  <div>Total whips ever:&nbsp;&nbsp;<span id="stat-total">0</span></div>
+  <img id="stats-logo" src="assets/openwhip.png" alt="OpenWhip">
+  <div id="stats-divider"></div>
+  <div id="stats-content">
+    <div class="stat-row">
+      <span class="stat-label">Session</span>
+      <span class="stat-value" id="stat-session">0</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">All&nbsp;Time</span>
+      <span class="stat-value" id="stat-total">0</span>
+    </div>
+  </div>
 </div>
 <script>
 
@@ -112,7 +162,9 @@ let currentVolume = 1.0;
 let isMuted = false;
 
 document.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
-document.addEventListener('mousedown', () => { if (whip && !dropping) dropping = true; });
+document.addEventListener('mousedown', () => {
+  if (whip && !dropping) { dropping = true; shoutBubble = null; }
+});
 
 // ── Whip creation ───────────────────────────────────────────────────────────
 function spawnWhip(mx, my) {
@@ -396,6 +448,7 @@ function update() {
   if (dropping && whip.every(p => p.y > H + 60)) {
     whip = null;
     dropping = false;
+    shoutBubble = null;
     window.bridge.hideOverlay();
   }
   prevMouseX = mouseX;
@@ -511,7 +564,7 @@ function wrapWords(text, maxW) {
 
 
 function drawShoutBubble() {
-  if (!shoutBubble) return;
+  if (!shoutBubble || dropping) return;
   const elapsed = Date.now() - shoutBubble.spawnTime;
 
   // Fade in only — bubble stays until overlay drops
@@ -594,7 +647,7 @@ window.bridge.onCountUpdate(({ session, total }) => {
 
 // ── IPC from main process ───────────────────────────────────────────────────
 window.bridge.onSpawnWhip(() => {
-  // Always start at screen center to avoid stale/zero coordinates causing a velocity spike
+  shoutBubble = null;
   mouseX = W / 2;
   mouseY = H * 0.55;
   whip = spawnWhip(mouseX, mouseY);
@@ -608,9 +661,7 @@ window.bridge.onSpawnWhip(() => {
 });
 
 window.bridge.onDropWhip(() => {
-  if (whip && !dropping) dropping = true;
-  shoutBubble = null;
-  statsEl.classList.remove('visible');
+  if (whip && !dropping) { dropping = true; shoutBubble = null; }
 });
 
 window.bridge.onLastPhrase(phrase => setShoutBubble(phrase));
