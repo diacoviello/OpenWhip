@@ -58,7 +58,7 @@ let crackCount=0;
 let sessionCrackCount=0;
 let appStats={};
 let statsPath;
-let volume=1.0;
+let volume=1.0; // 0–100
 let muted=false;
 
 function loadCrackCount() {
@@ -109,6 +109,18 @@ function rebuildTrayMenu() {
 				checked: !muted&&volume===v,
 				click: () => { volume=v; muted=false; saveCrackCount(); sendVolumeUpdate(); rebuildTrayMenu(); },
 			} ) ) },
+			{ type: 'separator' },
+			{
+				label: 'Volume',
+				submenu: [
+					{ label: 'Mute', type: 'checkbox', checked: muted, click: toggleMute },
+					{ type: 'separator' },
+					{ label: '25%',  type: 'radio', checked: volume===25,  click: () => setVolume( 25 ) },
+					{ label: '50%',  type: 'radio', checked: volume===50,  click: () => setVolume( 50 ) },
+					{ label: '75%',  type: 'radio', checked: volume===75,  click: () => setVolume( 75 ) },
+					{ label: '100%', type: 'radio', checked: volume===100, click: () => setVolume( 100 ) },
+				],
+			},
 			{ type: 'separator' },
 			{ label: 'Quit', click: () => app.quit() },
 		] )
