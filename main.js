@@ -51,7 +51,6 @@ function getActiveProcessName() {
 // ── Globals ─────────────────────────────────────────────────────────────────
 let tray, overlay;
 let overlayReady=false;
-let spawnQueued=false;
 
 // ── Crack count persistence ──────────────────────────────────────────────────
 let crackCount=0;
@@ -237,32 +236,25 @@ function createOverlay() {
 		overlayReady=true;
 		overlay.webContents.send( 'volume-update', { volume, muted } );
 		overlay.webContents.send( 'count-update', { session: sessionCrackCount, total: crackCount } );
-		if ( spawnQueued&&overlay&&overlay.isVisible() ) {
-			spawnQueued=false;
-			overlay.webContents.send( 'spawn-whip' );
-			refocusPreviousApp();
-		}
+		refocusPreviousApp();
 	} );
 	overlay.on( 'closed', () => {
 		overlay=null;
 		overlayReady=false;
-		spawnQueued=false;
 	} );
 }
 
 function toggleOverlay() {
 	if ( overlay&&overlay.isVisible() ) {
-		overlay.webContents.send( 'drop-whip' );
+		if ( overlayReady ) overlay.webContents.send( 'drop-whip' );
+		overlay.hide();
 		return;
 	}
 	if ( !overlay ) createOverlay();
 	overlay.show();
 	if ( overlayReady ) {
-		overlay.webContents.send( 'spawn-whip' );
 		overlay.webContents.send( 'count-update', { session: sessionCrackCount, total: crackCount } );
 		refocusPreviousApp();
-	} else {
-		spawnQueued=true;
 	}
 }
 
@@ -284,6 +276,9 @@ ipcMain.on( 'whip-crack', () => {
 	}
 } );
 ipcMain.on( 'hide-overlay', () => { if ( overlay ) overlay.hide(); } );
+ipcMain.on( 'set-ignore-mouse-events', ( _, ignore, opts ) => {
+	if ( overlay ) overlay.setIgnoreMouseEvents( ignore, opts||{} );
+} );
 
 
 // ── Macro: immediate Ctrl+C, type "Go FASER", Enter ───────────────────────
