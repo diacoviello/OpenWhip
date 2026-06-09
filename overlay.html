@@ -10,18 +10,46 @@
     top: 20px;
     left: 20px;
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    gap: 10px;
     background: rgba(94, 0, 0, 0.88);
     border: 1px solid rgba(245, 196, 0, 0.25);
     border-radius: 24px;
-    padding: 12px 22px 12px 12px;
-    pointer-events: none;
+    padding: 12px 22px 16px 12px;
+    pointer-events: auto;
+    z-index: 20;
     transform: scale(0.93);
     transform-origin: left top;
     opacity: 0;
     transition: opacity 0.3s ease;
     box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    cursor: default;
+  }
+  #stats-main-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #grab-btn {
+    pointer-events: auto;
+    cursor: pointer;
+    padding: 10px 0;
+    background: rgba(245, 196, 0, 0.9);
+    border: none;
+    border-radius: 14px;
+    font-family: "Georgia", serif;
+    font-size: 20px;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: rgba(80, 0, 0, 0.95);
+    letter-spacing: 1px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  #grab-btn:hover {
+    background: rgba(255, 215, 50, 1.0);
+  }
+  #grab-btn:active {
+    background: rgba(220, 160, 0, 1.0);
   }
   #stats.visible { opacity: 1; }
   #stats-logo {
@@ -72,18 +100,21 @@
 <body>
 <canvas id="c"></canvas>
 <div id="stats">
-  <img id="stats-logo" src="assets/openwhip.png" alt="OpenWhip">
-  <div id="stats-divider"></div>
-  <div id="stats-content">
-    <div class="stat-row">
-      <span class="stat-label">Session:</span>
-      <span class="stat-value" id="stat-session">0</span>
-    </div>
-    <div class="stat-row">
-      <span class="stat-label">All&nbsp;Time:</span>
-      <span class="stat-value" id="stat-total">0</span>
+  <div id="stats-main-row">
+    <img id="stats-logo" src="assets/openwhip.png" alt="OpenWhip">
+    <div id="stats-divider"></div>
+    <div id="stats-content">
+      <div class="stat-row">
+        <span class="stat-label">Session:</span>
+        <span class="stat-value" id="stat-session">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">All&nbsp;Time:</span>
+        <span class="stat-value" id="stat-total">0</span>
+      </div>
     </div>
   </div>
+  <button id="grab-btn">Grab Whip</button>
 </div>
 <script>
 
@@ -165,9 +196,13 @@ const WHIP_CRACK_SOUNDS = ['sounds/A.mp3', 'sounds/B.mp3', 'sounds/C.mp3', 'soun
 let currentVolume = 1.0;
 let isMuted = false;
 
-document.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
-document.addEventListener('mousedown', () => {
-  if (whip && !dropping) { dropping = true; shoutBubble = null; }
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (!whip || dropping) updateMouseIgnore();
+});
+document.addEventListener('mouseleave', () => {
+  if (!whip || dropping) window.bridge.setIgnoreMouseEvents(true, { forward: true });
 });
 
 // ── Whip creation ───────────────────────────────────────────────────────────
@@ -453,7 +488,8 @@ function update() {
     whip = null;
     dropping = false;
     shoutBubble = null;
-    window.bridge.hideOverlay();
+    updateButton();
+    updateMouseIgnore();
   }
   prevMouseX = mouseX;
   prevMouseY = mouseY;
@@ -655,10 +691,45 @@ function loop() {
 }
 loop();
 
-// ── Stats HUD ───────────────────────────────────────────────────────────────
-const statsEl      = document.getElementById('stats');
-const statSession  = document.getElementById('stat-session');
-const statTotal    = document.getElementById('stat-total');
+// ── Stats HUD & button ───────────────────────────────────────────────────────
+const statsEl     = document.getElementById('stats');
+const statSession = document.getElementById('stat-session');
+const statTotal   = document.getElementById('stat-total');
+const grabBtn     = document.getElementById('grab-btn');
+
+function updateButton() {
+  grabBtn.textContent = (whip && !dropping) ? 'Drop Whip' : 'Grab Whip';
+}
+
+function updateMouseIgnore() {
+  if (whip && !dropping) {
+    window.bridge.setIgnoreMouseEvents(false, {});
+    return;
+  }
+  const r = statsEl.getBoundingClientRect();
+  const over = mouseX >= r.left && mouseX <= r.right && mouseY >= r.top && mouseY <= r.bottom;
+  window.bridge.setIgnoreMouseEvents(!over, { forward: true });
+}
+
+grabBtn.addEventListener('click', () => {
+  if (whip && !dropping) {
+    dropping = true;
+    shoutBubble = null;
+    updateButton();
+  } else if (!whip) {
+    shoutBubble = null;
+    mouseX = W / 2;
+    mouseY = H * 0.55;
+    whip = spawnWhip(mouseX, mouseY);
+    dropping = false;
+    prevMouseX = mouseX;
+    prevMouseY = mouseY;
+    handleAngle = P.baseTargetAngle;
+    handleAngVel = 0;
+    updateButton();
+    updateMouseIgnore();
+  }
+});
 
 window.bridge.onCountUpdate(({ session, total }) => {
   statSession.textContent = session;
@@ -666,26 +737,20 @@ window.bridge.onCountUpdate(({ session, total }) => {
 });
 
 // ── IPC from main process ───────────────────────────────────────────────────
-window.bridge.onSpawnWhip(() => {
-  shoutBubble = null;
-  mouseX = W / 2;
-  mouseY = H * 0.55;
-  whip = spawnWhip(mouseX, mouseY);
-  dropping = false;
-  prevMouseX = mouseX;
-  prevMouseY = mouseY;
-  handleAngle = P.baseTargetAngle;
-  handleAngVel = 0;
-  statSession.textContent = '0';
-  statsEl.classList.add('visible');
-});
-
 window.bridge.onDropWhip(() => {
-  if (whip && !dropping) { dropping = true; shoutBubble = null; }
+  whip = null;
+  dropping = false;
+  shoutBubble = null;
+  updateButton();
+  updateMouseIgnore();
 });
 
 window.bridge.onLastPhrase(phrase => setShoutBubble(phrase));
 window.bridge.onVolumeUpdate(({ volume, muted }) => { _volume = volume; _muted = muted; });
+
+// Show stats panel immediately and enable mouse pass-through on load
+statsEl.classList.add('visible');
+window.bridge.setIgnoreMouseEvents(true, { forward: true });
 
 </script>
 </body>
