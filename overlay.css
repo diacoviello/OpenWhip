@@ -1,0 +1,351 @@
+* { margin: 0; padding: 0; cursor: none; }
+html, body { overflow: hidden; background: transparent; width: 100%; height: 100%; }
+canvas { display: block; position: relative; z-index: 10; }
+
+#stats {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(94, 0, 0, 0.88);
+  border: 1px solid rgba(245, 196, 0, 0.25);
+  border-radius: 24px;
+  padding: 22px 22px 16px 12px;
+  pointer-events: auto;
+  z-index: 20;
+  transform: scale(0.93);
+  transform-origin: left top;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  cursor: default;
+}
+#stats.visible { opacity: 1; }
+
+/* Close (X) — top-right corner */
+#stats-close {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(245, 196, 0, 0.15);
+  color: rgba(245, 196, 0, 0.9);
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  font-weight: bold;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 30;
+}
+#stats-close:hover { background: rgba(245, 196, 0, 0.9); color: #5e0000; }
+
+/* Drag-to-resize handles (sit inside the panel's border-box so they stay hoverable) */
+.resize-handle {
+  position: absolute;
+  z-index: 25;
+  pointer-events: auto;
+}
+.rh-right  { top: 12px; bottom: 12px; right: 0; width: 7px; cursor: ew-resize; }
+.rh-bottom { left: 12px; right: 12px; bottom: 0; height: 7px; cursor: ns-resize; }
+.rh-corner { right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; }
+/* little corner grip so it reads as resizable */
+.rh-corner::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(245, 196, 0, 0.55);
+  border-bottom: 2px solid rgba(245, 196, 0, 0.55);
+  border-bottom-right-radius: 3px;
+}
+
+#stats-main-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#stats-logo {
+  height: 110px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+  margin-right: 6px;
+}
+
+#stats-divider {
+  width: 1px;
+  height: 92px;
+  background: rgba(82, 82, 82, 0.12);
+  flex-shrink: 0;
+}
+
+#stats-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: right;
+}
+
+.stat-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.stat-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 205px;             /* both labels share this width so they line up */
+  font-family: "60s Scoreboard";
+  font-size: 36px;
+  font-weight: semi-bold;
+  color: rgba(255, 255, 255, 0.87); 
+  text-transform: uppercase;
+}
+
+/* Each letter is its own column; space-between spreads them edge-to-edge. */
+.stat-label span {
+  display: inline-block;
+}
+
+.stat-colon {
+  display: flex;
+  align-items: center;
+  font-family: "60s Scoreboard";
+  font-size: 36px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.87);
+}
+
+/* ── Flip-card counter ──────────────────────────────────────────────────────
+   Rotor geometry adapted from FlipDown (Peter Butcher), themed gold-on-red.   */
+.stat-value.flip-counter {
+   --rw: 38px;        /* rotor width            */
+  --rh: 58px;        /* rotor height (full)   */
+  --rhh: 29px;       /* rotor half height      */
+  --fs: 46px;        /* digit font size        */
+  display: inline-flex;
+  gap: 4px;
+  font-family: 'Orbitron', 'Helvetica Black', 'Courier New', monospace;
+  font-size: 4.5rem;
+  font-weight: 800;
+  color: #ff3333;
+  /* Classic red glow */
+  text-shadow: 0 0 10px rgba(255, 51, 51, 0.8), 0 0 20px rgba(255, 51, 51, 0.4);
+  letter-spacing: 2px;
+  /* LOST hatch metal housing the flaps sit recessed into */
+  padding: 6px 7px;
+  background: linear-gradient(to bottom, #5a5e60 0%, #313436 100%);
+  border-radius: 6px;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.75),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 3px 8px rgba(0, 0, 0, 0.5);
+}
+
+.flip-counter .rotor {
+  position: relative;
+  width: var(--rw);
+  height: var(--rh);
+  font-size: var(--fs);
+  /* clean bold sans-serif like the show's flaps */
+  font-family: Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  border-radius: 3px;
+  text-align: center;
+  perspective: 240px;   /* drives the forward-fold foreshortening */
+}
+
+/* Stacked flap edges peeking out behind each card's sides */
+.flip-counter .rotor:before {
+  content: '';
+  z-index: 0;
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: -3px;
+  right: -3px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    to bottom,
+    #1d1d1d 0px, #1d1d1d 1px,
+    #44464a 1px, #44464a 3px
+  );
+  box-shadow: 0 4px 7px rgba(0, 0, 0, 0.55);
+}
+
+/* Black digits on cream flaps (palette per the lost-timer reference) */
+.flip-counter .rotor-top,
+.flip-counter .rotor-bottom,
+.flip-counter .rotor-leaf-front,
+.flip-counter .rotor-leaf-rear {
+  color: #15130e;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.flip-counter .rotor-top,
+.flip-counter .rotor-bottom {
+  overflow: hidden;
+  position: absolute;
+  left: 0;
+  width: var(--rw);
+  height: var(--rhh);
+}
+
+/* TOP HALF — top edge angles back, so the center seam protrudes forward.
+   Slightly darker than the lower flap, matching the screenshot's lighting.  */
+.flip-counter .rotor-top {
+  top: 0;
+  line-height: var(--rh);
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(to bottom, #b6b3a8 0%, #d0cdc2 100%);
+  transform: rotateX(9deg);
+  transform-origin: bottom center;
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.22);
+}
+
+/* BOTTOM HALF — bottom edge angles back; brighter, lit face. */
+.flip-counter .rotor-bottom {
+  bottom: 0;
+  line-height: 0;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(to bottom, #efece3 0%, #e2dfd5 100%);
+  transform: rotateX(-9deg);
+  transform-origin: top center;
+}
+
+.flip-counter .rotor-leaf {
+  z-index: 1;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--rw);
+  height: var(--rh);
+  transform-style: preserve-3d;
+  transition: transform 0s;
+}
+
+.flip-counter .rotor-leaf.flipped {
+  transform: rotateX(-180deg);
+  transition: all 0.5s ease-in-out;
+}
+
+.flip-counter .rotor-leaf-front,
+.flip-counter .rotor-leaf-rear {
+  overflow: hidden;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--rw);
+  height: var(--rhh);
+  margin: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Resting top face — matches rotor-top, including the forward tilt. */
+.flip-counter .rotor-leaf-front {
+  line-height: var(--rh);
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(to bottom, #b6b3a8 0%, #d0cdc2 100%);
+  transform: rotateX(9deg);
+  transform-origin: bottom center;
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.22);
+}
+
+.flip-counter .rotor-leaf-rear {
+  line-height: 0;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(to bottom, #efece3 0%, #e2dfd5 100%);
+  transform: rotateX(-180deg);
+}
+
+/* Center seam: thin dark fold line + shadow the top flap casts on the lower one */
+.flip-counter .rotor:after {
+  content: '';
+  z-index: 2;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--rw);
+  height: var(--rhh);
+  border-radius: 0 0 3px 3px;
+  border-top: solid 1px rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 2px 4px -1px rgba(0, 0, 0, 0.4);
+}
+
+#grab-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 10px 0;
+  background: rgba(245, 196, 0, 0.9);
+  border: none;
+  border-radius: 14px;
+  font-family: "Georgia", serif;
+  font-size: 20px;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: rgba(80, 0, 0, 0.95);
+  letter-spacing: 1px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+#grab-btn:hover { background: rgba(255, 215, 50, 1.0); }
+#grab-btn:active { background: rgba(220, 160, 0, 1.0); }
+
+#vol-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px;
+}
+
+#vol-label {
+  font-family: "Georgia", serif;
+  font-size: 14px;
+  font-weight: bold;
+  color: rgba(245, 196, 0, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  flex-shrink: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+#vol-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+#vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(245, 196, 0, 0.9);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+#vol-slider::-webkit-slider-thumb:hover { background: rgba(255, 215, 50, 1.0); }
+
+@font-face { font-family: 'BubbleCartoon'; src: url('fonts/BD_Cartoon_Shout.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: '60s Scoreboard'; src: url('fonts/60s%20Scoreboard.ttf') format('truetype'); font-display: swap; }

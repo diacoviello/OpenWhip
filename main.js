@@ -205,6 +205,28 @@ async function getTrayIcon() {
 	return createTrayIconFallback();
 }
 
+// ── Dev: live-reload overlay when CSS/HTML is edited ─────────────────────────
+// Watches the project dir (dev only) and reloads the overlay's renderer on save.
+// Lossless: did-finish-load re-sends volume + counts, so stats are restored.
+function watchOverlayAssets() {
+	if ( app.isPackaged ) return; // never run in a packaged build
+	let pending=null;
+	try {
+		fs.watch( __dirname, ( _event, filename ) => {
+			if ( filename!=='overlay.css'&&filename!=='overlay.html' ) return;
+			clearTimeout( pending );
+			pending=setTimeout( () => {
+				if ( overlay&&!overlay.isDestroyed() ) {
+					overlay.webContents.reloadIgnoringCache();
+				}
+			}, 120 ); // debounce editor multi-write/atomic-save
+		} );
+		console.log( 'openwhip dev: watching overlay.css / overlay.html for live reload' );
+	} catch ( e ) {
+		console.warn( 'openwhip dev watch failed:', e.message );
+	}
+}
+
 // ── Overlay window ──────────────────────────────────────────────────────────
 function createOverlay() {
 	const { bounds }=screen.getPrimaryDisplay();
@@ -392,6 +414,7 @@ function sendMacroLinux( text ) {
 app.whenReady().then( async () => {
 	statsPath=path.join( app.getPath( 'userData' ), 'stats.json' );
 	loadCrackCount();
+	watchOverlayAssets();
 
 	tray=new Tray( await getTrayIcon() );
 	tray.setToolTip( 'OpenWhip - click for whip' );

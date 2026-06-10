@@ -1,156 +1,28 @@
 <!DOCTYPE html>
 <html>
 <head>
-<style>
-  * { margin: 0; padding: 0; cursor: none; }
-  html, body { overflow: hidden; background: transparent; width: 100%; height: 100%; }
-  canvas { display: block; position: relative; z-index: 10; }
-  #stats {
-    position: fixed;
-    top: 20px;
-    left: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    background: rgba(94, 0, 0, 0.88);
-    border: 1px solid rgba(245, 196, 0, 0.25);
-    border-radius: 24px;
-    padding: 12px 22px 16px 12px;
-    pointer-events: auto;
-    z-index: 20;
-    transform: scale(0.93);
-    transform-origin: left top;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-    cursor: default;
-  }
-  #stats-main-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  #grab-btn {
-    pointer-events: auto;
-    cursor: pointer;
-    padding: 10px 0;
-    background: rgba(245, 196, 0, 0.9);
-    border: none;
-    border-radius: 14px;
-    font-family: "Georgia", serif;
-    font-size: 20px;
-    font-weight: bold;
-    text-transform: uppercase;
-    color: rgba(80, 0, 0, 0.95);
-    letter-spacing: 1px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-  }
-  #grab-btn:hover {
-    background: rgba(255, 215, 50, 1.0);
-  }
-  #grab-btn:active {
-    background: rgba(220, 160, 0, 1.0);
-  }
-  #stats.visible { opacity: 1; }
-  #stats-logo {
-    height: 150px;
-    width: auto;
-    object-fit: contain;
-    flex-shrink: 0;
-    margin-right: 6px;
-  }
-  #stats-divider {
-    width: 1px;
-    height: 120px;
-    background: rgba(82, 82, 82, 0.12);
-    flex-shrink: 0;
-  }
-  #stats-content {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    justify-content: center;
-  }
-  .stat-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .stat-label {
-    font-family: "Georgia", serif;
-    font-size: 36px;
-    font-weight: bold;
-    letter-spacing: 1px;
-    color: rgba(0, 0, 0, 0.87);
-    text-transform: uppercase;
-    min-width: 120px;
-  }
-  .stat-value {
-    font-family: "60s Scoreboard";
-    font-size: 64px;
-    color: #F5C400;
-    line-height: 0.9;
-    min-width: 42px;
-    text-align: right;
-  }
-  #vol-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 2px;
-  }
-  #vol-label {
-    font-family: "Georgia", serif;
-    font-size: 14px;
-    font-weight: bold;
-    color: rgba(245, 196, 0, 0.8);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    flex-shrink: 0;
-    pointer-events: none;
-    user-select: none;
-  }
-  #vol-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    flex: 1;
-    height: 6px;
-    border-radius: 3px;
-    outline: none;
-    cursor: pointer;
-    pointer-events: auto;
-  }
-  #vol-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: rgba(245, 196, 0, 0.9);
-    cursor: pointer;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
-  }
-  #vol-slider::-webkit-slider-thumb:hover {
-    background: rgba(255, 215, 50, 1.0);
-  }
-  @font-face { font-family: 'BubbleCartoon'; src: url('fonts/BD_Cartoon_Shout.ttf') format('truetype'); font-display: swap; }
-  @font-face { font-family: '60s Scoreboard'; src: url('fonts/60s%20Scoreboard.ttf') format('truetype'); font-display: swap; }
-</style>
+<link rel="stylesheet" href="overlay.css">
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="stats">
+  <button id="stats-close" title="Close">&#10005;</button>
+  <div class="resize-handle rh-right"  data-dir="r"></div>
+  <div class="resize-handle rh-bottom" data-dir="b"></div>
+  <div class="resize-handle rh-corner" data-dir="br"></div>
   <div id="stats-main-row">
     <img id="stats-logo" src="assets/openwhip.png" alt="OpenWhip">
     <div id="stats-divider"></div>
     <div id="stats-content">
       <div class="stat-row">
-        <span class="stat-label">Session:</span>
-        <span class="stat-value" id="stat-session">0</span>
+        <span class="stat-label">Session</span>
+        <span class="stat-colon">:</span>
+        <span class="stat-value flip-counter" id="stat-session"></span>
       </div>
       <div class="stat-row">
-        <span class="stat-label">All&nbsp;Time:</span>
-        <span class="stat-value" id="stat-total">0</span>
+        <span class="stat-label">All Time</span>
+        <span class="stat-colon">:</span>
+        <span class="stat-value flip-counter" id="stat-total"></span>
       </div>
     </div>
   </div>
@@ -604,8 +476,8 @@ const _SVG_BCX = 1183.5; // body center x (horizontal midpoint)
 const _SVG_BCY = 450;    // body center y
 const _SVG_IW = 1700;    // inner text area width (inside spike bases)
 const _SVG_IH = 460;     // inner text area height — reduced to add top/bottom padding
-// Scale factor to shrink bubble (0.85 = 15% smaller)
-const BUBBLE_SCALE = 0.85;
+// Scale factor to shrink bubble (1.0 = full size)
+const BUBBLE_SCALE = 0.97;
 
 const BUBBLE_FONTS = ['BubbleCartoon'];
 
@@ -678,7 +550,8 @@ function drawShoutBubble() {
   const svgW = W * 0.60 * BUBBLE_SCALE;
   const svgH = svgW * (_SVG_H / _SVG_W);
   const svgX = (W - svgW) / 2;
-  const svgY = (H - svgH) / 2;
+  // Raise the bubble to halfway between screen center and the top margin.
+  const svgY = (H - svgH) / 2 - H / 4;
   const svgScale = svgW / _SVG_W;
   const textCX = W / 2;
   const textCY = svgY + _SVG_BCY * svgScale;
@@ -737,16 +610,131 @@ loop();
 
 // ── Stats HUD & button ───────────────────────────────────────────────────────
 const statsEl     = document.getElementById('stats');
-const statSession = document.getElementById('stat-session');
-const statTotal   = document.getElementById('stat-total');
 const grabBtn     = document.getElementById('grab-btn');
 const volSlider   = document.getElementById('vol-slider');
+const closeBtn    = document.getElementById('stats-close');
+
+// Scoreboard scale (drag-to-resize). Persisted so it survives reloads.
+const SCALE_KEY = 'openwhip-stats-scale';
+const MIN_SCALE = 0.5, MAX_SCALE = 3;
+let statsScale = parseFloat(localStorage.getItem(SCALE_KEY)) || 0.93;
+let resizing = null; // 'r' | 'b' | 'br' while dragging a handle, else null
+
+function applyStatsScale() { statsEl.style.transform = `scale(${statsScale})`; }
+
+// ── Flip-card counter (adapted from FlipDown by Peter Butcher) ────────────────
+class FlipCounter {
+  constructor(el) {
+    this.el = el;
+    this.rotors = [];       // left → right, one per digit
+    this.set(0, true);      // initial value, no animation
+  }
+
+  _makeRotor(digit) {
+    const rotor = document.createElement('div');
+    rotor.className = 'rotor';
+    rotor.innerHTML =
+      '<div class="rotor-leaf">' +
+        '<figure class="rotor-leaf-rear">'  + digit + '</figure>' +
+        '<figure class="rotor-leaf-front">' + digit + '</figure>' +
+      '</div>' +
+      '<div class="rotor-top">'    + digit + '</div>' +
+      '<div class="rotor-bottom">' + digit + '</div>';
+    rotor._value = digit;
+    rotor._flipping = false;
+    rotor._pending = null;
+    return rotor;
+  }
+
+  set(value, instant = false) {
+    const str = String(Math.max(0, Math.floor(value)));
+
+    // Grow/shrink rotor count, keeping digits right-aligned (odometer style).
+    while (this.rotors.length < str.length) {
+      const r = this._makeRotor('0');
+      this.rotors.unshift(r);
+      this.el.insertBefore(r, this.el.firstChild);
+    }
+    while (this.rotors.length > str.length) {
+      this.el.removeChild(this.rotors.shift());
+    }
+
+    for (let i = 0; i < str.length; i++) {
+      this._setDigit(this.rotors[i], str[i], instant);
+    }
+  }
+
+  _setDigit(rotor, digit, instant) {
+    if (rotor._value === digit && !rotor._flipping) return;
+    if (instant) {
+      rotor._value = digit;
+      rotor._pending = null;
+      rotor.querySelector('.rotor-leaf-front').textContent = digit;
+      rotor.querySelector('.rotor-leaf-rear').textContent  = digit;
+      rotor.querySelector('.rotor-top').textContent        = digit;
+      rotor.querySelector('.rotor-bottom').textContent     = digit;
+      return;
+    }
+    if (rotor._flipping) { rotor._pending = digit; return; }  // queue latest
+    if (rotor._value === digit) return;
+    this._flip(rotor, digit);
+  }
+
+  _flip(rotor, digit) {
+    rotor._flipping = true;
+    const leaf   = rotor.querySelector('.rotor-leaf');
+    const front  = rotor.querySelector('.rotor-leaf-front');
+    const rear   = rotor.querySelector('.rotor-leaf-rear');
+    const top    = rotor.querySelector('.rotor-top');
+    const bottom = rotor.querySelector('.rotor-bottom');
+
+    // Reveal new value on the hidden faces, then drop the leaf.
+    top.textContent  = digit;
+    rear.textContent = digit;
+    leaf.classList.add('flipped');
+
+    setTimeout(() => {
+      // Restore idle state showing the new value, then snap leaf back (0s).
+      front.textContent  = digit;
+      bottom.textContent = digit;
+      leaf.classList.remove('flipped');
+      rotor._value = digit;
+      rotor._flipping = false;
+      if (rotor._pending !== null) {
+        const next = rotor._pending;
+        rotor._pending = null;
+        this._setDigit(rotor, next, false);
+      }
+    }, 500);
+  }
+}
+
+const sessionCounter = new FlipCounter(document.getElementById('stat-session'));
+const totalCounter   = new FlipCounter(document.getElementById('stat-total'));
+let _countsInitialised = false;
+
+// Splay each label's letters into evenly-spaced columns so "SESSION" and
+// "ALLTIME" (both 7 glyphs) fill the same width and line up letter-for-letter.
+document.querySelectorAll('.stat-label').forEach(el => {
+  const text = el.textContent.replace(/\s+/g, '');
+  el.textContent = '';
+  for (const ch of text) {
+    const s = document.createElement('span');
+    s.textContent = ch;
+    el.appendChild(s);
+  }
+});
 
 function updateButton() {
   grabBtn.textContent = (whip && !dropping) ? 'Drop Whip' : 'Grab Whip';
 }
 
 function updateMouseIgnore() {
+  if (resizing) {
+    // Keep capturing the mouse for the whole drag, even outside the panel.
+    window.bridge.setIgnoreMouseEvents(false, {});
+    return;
+  }
   if (whip && !dropping) {
     window.bridge.setIgnoreMouseEvents(false, {});
     return;
@@ -777,8 +765,10 @@ grabBtn.addEventListener('click', () => {
 });
 
 window.bridge.onCountUpdate(({ session, total }) => {
-  statSession.textContent = session;
-  statTotal.textContent   = total;
+  const instant = !_countsInitialised;
+  sessionCounter.set(session, instant);
+  totalCounter.set(total, instant);
+  _countsInitialised = true;
 });
 
 // ── IPC from main process ───────────────────────────────────────────────────
@@ -811,7 +801,51 @@ volSlider.addEventListener('input', () => {
   window.bridge.setVolume(v);
 });
 
+// ── Close button ─────────────────────────────────────────────────────────────
+closeBtn.addEventListener('click', () => {
+  // Hide the whole overlay; the tray icon brings it back.
+  whip = null;
+  dropping = false;
+  shoutBubble = null;
+  window.bridge.hideOverlay();
+});
+
+// ── Drag-to-resize (uniform scale, anchored at the panel's top-left) ──────────
+function onResizeMove(e) {
+  if (!resizing) return;
+  const r = statsEl.getBoundingClientRect();        // visual box (origin pinned)
+  const nW = statsEl.offsetWidth || 1;              // unscaled layout size
+  const nH = statsEl.offsetHeight || 1;
+  const sx = (e.clientX - r.left) / nW;
+  const sy = (e.clientY - r.top)  / nH;
+  let s = resizing === 'r' ? sx
+        : resizing === 'b' ? sy
+        : Math.max(sx, sy);                          // corner: follow the further axis
+  statsScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+  applyStatsScale();
+}
+
+function onResizeEnd() {
+  resizing = null;
+  document.removeEventListener('mousemove', onResizeMove);
+  document.removeEventListener('mouseup', onResizeEnd);
+  localStorage.setItem(SCALE_KEY, String(statsScale));
+  updateMouseIgnore();
+}
+
+document.querySelectorAll('.resize-handle').forEach(h => {
+  h.addEventListener('mousedown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizing = h.dataset.dir;
+    window.bridge.setIgnoreMouseEvents(false, {});
+    document.addEventListener('mousemove', onResizeMove);
+    document.addEventListener('mouseup', onResizeEnd);
+  });
+});
+
 // Show stats panel immediately and enable mouse pass-through on load
+applyStatsScale();
 statsEl.classList.add('visible');
 updateSliderFill();
 window.bridge.setIgnoreMouseEvents(true, { forward: true });
