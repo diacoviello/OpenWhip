@@ -93,6 +93,46 @@
     min-width: 42px;
     text-align: right;
   }
+  #vol-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 2px;
+  }
+  #vol-label {
+    font-family: "Georgia", serif;
+    font-size: 14px;
+    font-weight: bold;
+    color: rgba(245, 196, 0, 0.8);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    flex-shrink: 0;
+    pointer-events: none;
+    user-select: none;
+  }
+  #vol-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+  #vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(245, 196, 0, 0.9);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
+  #vol-slider::-webkit-slider-thumb:hover {
+    background: rgba(255, 215, 50, 1.0);
+  }
   @font-face { font-family: 'BubbleCartoon'; src: url('fonts/BD_Cartoon_Shout.ttf') format('truetype'); font-display: swap; }
   @font-face { font-family: '60s Scoreboard'; src: url('fonts/60s%20Scoreboard.ttf') format('truetype'); font-display: swap; }
 </style>
@@ -115,6 +155,10 @@
     </div>
   </div>
   <button id="grab-btn">Grab Whip</button>
+  <div id="vol-row">
+    <span id="vol-label">Vol</span>
+    <input type="range" id="vol-slider" min="0" max="100" value="100">
+  </div>
 </div>
 <script>
 
@@ -696,6 +740,7 @@ const statsEl     = document.getElementById('stats');
 const statSession = document.getElementById('stat-session');
 const statTotal   = document.getElementById('stat-total');
 const grabBtn     = document.getElementById('grab-btn');
+const volSlider   = document.getElementById('vol-slider');
 
 function updateButton() {
   grabBtn.textContent = (whip && !dropping) ? 'Drop Whip' : 'Grab Whip';
@@ -746,10 +791,29 @@ window.bridge.onDropWhip(() => {
 });
 
 window.bridge.onLastPhrase(phrase => setShoutBubble(phrase));
-window.bridge.onVolumeUpdate(({ volume, muted }) => { _volume = volume; _muted = muted; });
+window.bridge.onVolumeUpdate(({ volume, muted }) => {
+  _volume = volume;
+  _muted = muted;
+  volSlider.value = Math.round(volume * 100);
+  updateSliderFill();
+});
+
+function updateSliderFill() {
+  const pct = volSlider.value + '%';
+  volSlider.style.background =
+    `linear-gradient(to right, rgba(245,196,0,0.85) 0%, rgba(245,196,0,0.85) ${pct}, rgba(255,255,255,0.15) ${pct}, rgba(255,255,255,0.15) 100%)`;
+}
+
+volSlider.addEventListener('input', () => {
+  const v = volSlider.value / 100;
+  _volume = v;
+  updateSliderFill();
+  window.bridge.setVolume(v);
+});
 
 // Show stats panel immediately and enable mouse pass-through on load
 statsEl.classList.add('visible');
+updateSliderFill();
 window.bridge.setIgnoreMouseEvents(true, { forward: true });
 
 </script>

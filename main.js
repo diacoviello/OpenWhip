@@ -86,7 +86,6 @@ function sendVolumeUpdate() {
 }
 
 function rebuildTrayMenu() {
-	const volLevels=[ 1.0, 0.75, 0.5, 0.25 ];
 	tray.setContextMenu(
 		Menu.buildFromTemplate( [
 			{ label: 'Reset Total Count', click: () => {
@@ -102,12 +101,6 @@ function rebuildTrayMenu() {
 				sendVolumeUpdate();
 				rebuildTrayMenu();
 			} },
-			{ label: 'Volume', submenu: volLevels.map( v => ( {
-				label: `${v*100}%`,
-				type: 'radio',
-				checked: !muted&&volume===v,
-				click: () => { volume=v; muted=false; saveCrackCount(); sendVolumeUpdate(); rebuildTrayMenu(); },
-			} ) ) },
 			{ type: 'separator' },
 			{ label: 'Quit', click: () => app.quit() },
 		] )
@@ -278,6 +271,13 @@ ipcMain.on( 'whip-crack', () => {
 ipcMain.on( 'hide-overlay', () => { if ( overlay ) overlay.hide(); } );
 ipcMain.on( 'set-ignore-mouse-events', ( _, ignore, opts ) => {
 	if ( overlay ) overlay.setIgnoreMouseEvents( ignore, opts||{} );
+} );
+ipcMain.on( 'set-volume', ( _, v ) => {
+	volume=Math.max( 0, Math.min( 1, v ) );
+	muted=false;
+	saveCrackCount();
+	sendVolumeUpdate();
+	rebuildTrayMenu();
 } );
 
 
