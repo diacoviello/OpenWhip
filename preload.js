@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('bridge', {
   whipCrack: () => ipcRenderer.send('whip-crack'),
   hideOverlay: () => ipcRenderer.send('hide-overlay'),
   setIgnoreMouseEvents: (ignore, opts) => ipcRenderer.send('set-ignore-mouse-events', ignore, opts),
+  setVolume: (v) => ipcRenderer.send('set-volume', v),
   onSpawnWhip: (fn) => ipcRenderer.on('spawn-whip', () => fn()),
   onDropWhip: (fn) => ipcRenderer.on('drop-whip', () => fn()),
   onCountUpdate: (fn) => ipcRenderer.on('count-update', (_, data) => fn(data)),
